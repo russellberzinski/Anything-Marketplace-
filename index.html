@@ -1,0 +1,787 @@
+<!-- index.html — OmniMarket (generic marketplace template)
+     - Static single-file app for GitHub Pages
+     - Username + password login (Firebase Auth under the hood)
+     - Create / browse listings, My Listings, basic profile
+     - Uses Firestore only (images are URLs; add Storage later if you want uploads)
+
+     ✅ What you MUST edit:
+     1) firebaseConfig (from Firebase Console -> Project settings -> Your apps -> Web app)
+     2) (Optional) BRAND fields (site name, accent colors)
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>OmniMarket — Marketplace</title>
+  <style>
+    :root{
+      --bg:#0b120d;
+      --card:#121b12;
+      --text:#f3f1e7;
+      --muted:#c9c2aa;
+      --line:#2c3a2b;
+      --accent:#7aa35a;
+      --accent2:#b08a5a;
+      --danger:#ff6b6b;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text)}
+    a{color:inherit}
+    header{position:sticky;top:0;z-index:10;background:rgba(18,27,18,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+    .bar{max-width:1100px;margin:0 auto;display:flex;gap:12px;align-items:center;justify-content:space-between;padding:14px 16px}
+    .brand{display:flex;align-items:center;gap:10px}
+    .logo{width:36px;height:36px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:1px solid rgba(255,255,255,.12)}
+    .title{line-height:1}
+    .title b{display:block;font-size:14px;letter-spacing:.2px}
+    .title span{display:block;font-size:12px;color:var(--muted)}
+    .nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+    button,.btn{
+      appearance:none;border:1px solid var(--line);background:transparent;color:var(--text);
+      padding:9px 12px;border-radius:12px;cursor:pointer;font-weight:600
+    }
+    button:hover,.btn:hover{border-color:rgba(255,255,255,.25)}
+    button.primary{background:var(--accent);border-color:transparent;color:#081006}
+    button.danger{background:transparent;border-color:rgba(255,107,107,.35);color:#ffd2d2}
+    button.small{padding:7px 10px;border-radius:10px;font-weight:700;font-size:12px}
+    .wrap{max-width:1100px;margin:0 auto;padding:16px}
+    .grid{display:grid;grid-template-columns:1fr;gap:12px}
+    @media(min-width:980px){ .grid{grid-template-columns:360px 1fr} }
+    .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px}
+    .card h2{margin:0 0 10px;font-size:15px}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .muted{color:var(--muted)}
+    .status{padding:10px 12px;border-radius:14px;border:1px solid var(--line);background:rgba(0,0,0,.15)}
+    .status.ok{border-color:rgba(122,163,90,.35)}
+    .status.bad{border-color:rgba(255,107,107,.35)}
+    input,select,textarea{
+      width:100%;background:rgba(0,0,0,.18);border:1px solid var(--line);color:var(--text);
+      padding:10px 12px;border-radius:12px;outline:none
+    }
+    textarea{min-height:92px;resize:vertical}
+    label{display:block;font-size:12px;color:var(--muted);margin:10px 0 6px}
+    .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+    .pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line);padding:6px 10px;border-radius:999px;font-size:12px}
+    .list{display:grid;grid-template-columns:1fr;gap:10px}
+    .item{border:1px solid var(--line);border-radius:16px;padding:12px;background:rgba(0,0,0,.14)}
+    .itemTop{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+    .item h3{margin:0;font-size:14px}
+    .price{font-weight:900}
+    .tag{font-size:11px;color:var(--muted)}
+    .thumbRow{display:flex;gap:10px;align-items:flex-start;margin-top:10px}
+    .thumb{
+      width:84px;height:84px;border-radius:14px;border:1px solid var(--line);
+      background:rgba(0,0,0,.18);object-fit:cover;flex:0 0 auto
+    }
+    .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .hide{display:none !important}
+    .hr{height:1px;background:var(--line);margin:12px 0}
+    .kbd{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+         font-size:12px;border:1px solid var(--line);padding:2px 6px;border-radius:8px;color:var(--muted)}
+    .footnote{font-size:12px;color:var(--muted);line-height:1.45}
+  </style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="brand">
+      <div class="logo" aria-hidden="true"></div>
+      <div class="title">
+        <b>OmniMarket</b>
+        <span>Marketplace for anything & everything</span>
+      </div>
+    </div>
+    <div class="nav">
+      <span id="who" class="pill hide"></span>
+      <button id="btnFeed" class="small">Feed</button>
+      <button id="btnMy" class="small hide">My Listings</button>
+      <button id="btnNew" class="small hide">New Listing</button>
+      <button id="btnLogout" class="danger small hide">Log out</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div id="globalStatus" class="status">Loading…</div>
+
+  <div class="grid" style="margin-top:12px">
+    <!-- LEFT: AUTH + PROFILE -->
+    <div class="card" id="authCard">
+      <h2>Account</h2>
+
+      <div id="signedOut">
+        <div class="status" style="margin-bottom:10px">
+          Username + password login (no email shown).
+          <div class="footnote" style="margin-top:8px">
+            Internally this uses Firebase Auth with a generated email like <span class="kbd">username@users.omnimarket.local</span>.
+          </div>
+        </div>
+
+        <label>Username</label>
+        <input id="authUsername" placeholder="e.g. russell" autocomplete="username" />
+
+        <label>Password</label>
+        <input id="authPassword" type="password" placeholder="••••••••" autocomplete="current-password" />
+
+        <div class="row" style="margin-top:10px">
+          <button id="btnLogin" class="primary">Log in</button>
+          <button id="btnSignup">Sign up</button>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="footnote">
+          Tip: usernames allow <span class="kbd">a-z</span>, <span class="kbd">0-9</span>, <span class="kbd">_</span>, and <span class="kbd">.</span> (3–20 chars).
+          Password must be 6+ chars.
+        </div>
+      </div>
+
+      <div id="signedIn" class="hide">
+        <div class="row" style="justify-content:space-between">
+          <div>
+            <div class="muted" style="font-size:12px">Signed in as</div>
+            <div id="profileUsername" style="font-weight:900;font-size:16px"></div>
+          </div>
+          <span class="pill"><span class="tag">UID</span> <span id="profileUid" class="kbd"></span></span>
+        </div>
+
+        <div class="hr"></div>
+
+        <h2 style="margin-top:0">Profile</h2>
+        <label>Display name (optional)</label>
+        <input id="profileDisplayName" placeholder="Shown on listings" maxlength="40" />
+
+        <label>Location (optional)</label>
+        <input id="profileLocation" placeholder="City / State" maxlength="40" />
+
+        <div class="row" style="margin-top:10px">
+          <button id="btnSaveProfile" class="primary">Save Profile</button>
+        </div>
+
+        <div class="footnote" style="margin-top:10px">
+          Profiles are public-read (basic fields only) so listings can show seller info.
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: MAIN -->
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 id="viewTitle" style="margin:0">Feed</h2>
+        <div class="row">
+          <input id="q" placeholder="Search title…" style="width:220px" />
+          <select id="category" style="width:200px">
+            <option value="">All categories</option>
+            <option>General</option>
+            <option>Electronics</option>
+            <option>Vehicles & Parts</option>
+            <option>Tools</option>
+            <option>Home & Garden</option>
+            <option>Outdoor</option>
+            <option>Services</option>
+            <option>Pets</option>
+            <option>Jobs</option>
+            <option>Collectibles</option>
+            <option>Real Estate</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- NEW LISTING -->
+      <div id="newListing" class="hide" style="margin-top:12px">
+        <div class="status ok" style="margin-bottom:10px">
+          Create a listing. Images are URLs for now (add Storage later).
+        </div>
+
+        <label>Title</label>
+        <input id="liTitle" maxlength="120" placeholder="e.g. Milwaukee impact driver (bare tool)" />
+
+        <div class="two">
+          <div>
+            <label>Category</label>
+            <select id="liCategory">
+              <option>General</option>
+              <option>Electronics</option>
+              <option>Vehicles & Parts</option>
+              <option>Tools</option>
+              <option>Home & Garden</option>
+              <option>Outdoor</option>
+              <option>Services</option>
+              <option>Pets</option>
+              <option>Jobs</option>
+              <option>Collectibles</option>
+              <option>Real Estate</option>
+            </select>
+          </div>
+          <div>
+            <label>Condition</label>
+            <select id="liCondition">
+              <option>New</option>
+              <option>Like New</option>
+              <option>Good</option>
+              <option>Fair</option>
+              <option>For parts / not working</option>
+              <option>Not applicable</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="two">
+          <div>
+            <label>Price (USD)</label>
+            <input id="liPrice" type="number" min="0" max="999999" step="1" placeholder="100" />
+          </div>
+          <div>
+            <label>Type</label>
+            <select id="liType">
+              <option value="sell">For sale</option>
+              <option value="service">Service</option>
+              <option value="wanted">Wanted</option>
+              <option value="rent">For rent</option>
+              <option value="free">Free</option>
+            </select>
+          </div>
+        </div>
+
+        <label>Description</label>
+        <textarea id="liDesc" maxlength="1200" placeholder="Describe item/service, pickup details, etc."></textarea>
+
+        <div class="two">
+          <div>
+            <label>Image URL (optional)</label>
+            <input id="liImg1" maxlength="800" placeholder="https://…" />
+          </div>
+          <div>
+            <label>Second image URL (optional)</label>
+            <input id="liImg2" maxlength="800" placeholder="https://…" />
+          </div>
+        </div>
+
+        <div class="two">
+          <div>
+            <label>Location (optional)</label>
+            <input id="liLocation" maxlength="60" placeholder="City / area" />
+          </div>
+          <div>
+            <label>Contact note (optional)</label>
+            <input id="liContact" maxlength="80" placeholder="DM on site / text / etc." />
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:10px">
+          <button id="btnPublish" class="primary">Publish</button>
+          <button id="btnCancelNew">Cancel</button>
+        </div>
+
+        <div class="footnote" style="margin-top:10px">
+          Payments are not wired here. Once you add Stripe later, you’ll typically add a Cloud Function to create checkout sessions.
+        </div>
+      </div>
+
+      <!-- FEED -->
+      <div id="feed" style="margin-top:12px">
+        <div id="feedStatus" class="muted" style="margin-bottom:8px">Loading listings…</div>
+        <div id="items" class="list"></div>
+        <div class="row" style="margin-top:12px;justify-content:space-between">
+          <button id="btnMore" class="hide">Load more</button>
+          <span class="muted" id="count"></span>
+        </div>
+      </div>
+
+      <!-- MY LISTINGS -->
+      <div id="myListings" class="hide" style="margin-top:12px">
+        <div id="myStatus" class="muted" style="margin-bottom:8px">Loading your listings…</div>
+        <div id="myItems" class="list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  /***********************
+   * 1) Firebase imports
+   ***********************/
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import {
+    getAuth,
+    onAuthStateChanged,
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    signOut
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+  import {
+    getFirestore,
+    doc,
+    getDoc,
+    setDoc,
+    updateDoc,
+    addDoc,
+    collection,
+    query,
+    where,
+    orderBy,
+    limit,
+    startAfter,
+    getDocs,
+    serverTimestamp
+  } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+  /***********************
+   * 2) REQUIRED: Your Firebase config
+   ***********************/
+  const firebaseConfig = {
+    apiKey: "PASTE_API_KEY",
+    authDomain: "PASTE_AUTH_DOMAIN",
+    projectId: "PASTE_PROJECT_ID",
+    storageBucket: "PASTE_STORAGE_BUCKET",
+    messagingSenderId: "PASTE_SENDER_ID",
+    appId: "PASTE_APP_ID"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  /***********************
+   * 3) Helpers
+   ***********************/
+  const $ = (id) => document.getElementById(id);
+
+  const globalStatus = $("globalStatus");
+  const setGlobal = (msg, ok=true) => {
+    globalStatus.textContent = msg;
+    globalStatus.classList.toggle("ok", !!ok);
+    globalStatus.classList.toggle("bad", !ok);
+  };
+
+  function normalizeUsername(u){
+    return (u || "").trim().toLowerCase();
+  }
+
+  // Consistency matters forever (don’t change this once you have users)
+  function usernameToInternalEmail(username){
+    return `${username}@users.omnimarket.local`;
+  }
+
+  function validUsername(username){
+    if (username.length < 3 || username.length > 20) return false;
+    return /^[a-z0-9_.]+$/.test(username);
+  }
+
+  function asMoney(n){
+    if (n === null || n === undefined || n === "") return "—";
+    const x = Number(n);
+    if (!Number.isFinite(x)) return "—";
+    return `$${Math.round(x).toLocaleString()}`;
+  }
+
+  function safeText(s){
+    return (s || "").toString().replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+  }
+
+  function firstNonEmpty(...vals){
+    for(const v of vals){
+      if (v && String(v).trim().length) return String(v).trim();
+    }
+    return "";
+  }
+
+  /***********************
+   * 4) Username registry + profiles
+   *
+   * Collections:
+   * - usernames/{username} -> { uid, createdAt }
+   * - users/{uid} -> { username, displayName?, location?, updatedAt }
+   * - listings/{listingId} -> public listing docs
+   ***********************/
+  async function ensureUsernameMapping(username, uid){
+    const nameRef = doc(db, "usernames", username);
+    const snap = await getDoc(nameRef);
+    if (snap.exists()) throw new Error("That username is already taken.");
+    await setDoc(nameRef, { uid, createdAt: serverTimestamp() });
+  }
+
+  async function writeUserProfile(uid, data){
+    const ref = doc(db, "users", uid);
+    const patch = {
+      ...data,
+      updatedAt: serverTimestamp()
+    };
+    await setDoc(ref, patch, { merge: true });
+  }
+
+  async function readUserProfile(uid){
+    const ref = doc(db, "users", uid);
+    const snap = await getDoc(ref);
+    return snap.exists() ? snap.data() : null;
+  }
+
+  /***********************
+   * 5) Auth (username + password UI)
+   ***********************/
+  async function signupWithUsername(usernameRaw, password){
+    const username = normalizeUsername(usernameRaw);
+    if (!validUsername(username)) throw new Error("Username must be 3–20 chars and only letters/numbers/._");
+    if ((password || "").length < 6) throw new Error("Password must be at least 6 characters.");
+
+    const internalEmail = usernameToInternalEmail(username);
+    const cred = await createUserWithEmailAndPassword(auth, internalEmail, password);
+
+    // Reserve username -> uid
+    await ensureUsernameMapping(username, cred.user.uid);
+
+    // Create profile
+    await writeUserProfile(cred.user.uid, { username });
+
+    return cred.user;
+  }
+
+  async function loginWithUsername(usernameRaw, password){
+    const username = normalizeUsername(usernameRaw);
+    if (!validUsername(username)) throw new Error("Invalid username format.");
+    const internalEmail = usernameToInternalEmail(username);
+    const cred = await signInWithEmailAndPassword(auth, internalEmail, password);
+    return cred.user;
+  }
+
+  /***********************
+   * 6) Listings
+   ***********************/
+  let lastDoc = null;
+  let feedMode = "feed"; // "feed" | "my" | "new"
+  let currentUser = null;
+  let currentUsername = null;
+
+  function listingFromForm(){
+    const title = $("liTitle").value.trim();
+    const category = $("liCategory").value.trim();
+    const condition = $("liCondition").value.trim();
+    const type = $("liType").value;
+    const price = $("liPrice").value === "" ? null : Number($("liPrice").value);
+    const description = $("liDesc").value.trim();
+    const img1 = $("liImg1").value.trim();
+    const img2 = $("liImg2").value.trim();
+    const location = $("liLocation").value.trim();
+    const contactNote = $("liContact").value.trim();
+
+    if (title.length < 3 || title.length > 120) throw new Error("Title must be 3–120 characters.");
+    if (description.length < 0 || description.length > 1200) throw new Error("Description too long.");
+    if (price !== null && (!Number.isFinite(price) || price < 0 || price > 999999)) throw new Error("Price must be 0–999,999.");
+    const urlOk = (u) => u === "" || (/^https?:\/\/.+/i.test(u) && u.length <= 800);
+    if (!urlOk(img1) || !urlOk(img2)) throw new Error("Image URL must start with http(s) and be under 800 chars.");
+    if (location.length > 60) throw new Error("Location too long.");
+    if (contactNote.length > 80) throw new Error("Contact note too long.");
+
+    const images = [];
+    if (img1) images.push(img1);
+    if (img2) images.push(img2);
+
+    return {
+      title,
+      category,
+      condition,
+      type,                 // sell | service | wanted | rent | free
+      price: price ?? 0,     // store number; for "Free" you can set 0
+      description,
+      images,
+      location,
+      contactNote,
+      status: "active"       // active | sold | removed
+    };
+  }
+
+  async function publishListing(){
+    if (!currentUser) throw new Error("You must be logged in.");
+    const li = listingFromForm();
+
+    const docData = {
+      ...li,
+      sellerUid: currentUser.uid,
+      sellerUsername: currentUsername,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      // Search helper fields
+      titleLower: li.title.toLowerCase()
+    };
+
+    await addDoc(collection(db, "listings"), docData);
+  }
+
+  function renderItem(docSnap, mine=false){
+    const d = docSnap.data();
+    const title = safeText(d.title || "");
+    const desc = safeText(firstNonEmpty(d.description, ""));
+    const price = asMoney(d.price);
+    const cat = safeText(d.category || "General");
+    const typ = safeText(d.type || "sell");
+    const cond = safeText(d.condition || "—");
+    const loc = safeText(firstNonEmpty(d.location, "—"));
+    const seller = safeText(firstNonEmpty(d.sellerUsername, "seller"));
+    const status = safeText(d.status || "active");
+    const img = (d.images && d.images[0]) ? d.images[0] : "";
+    const created = d.createdAt?.toDate ? d.createdAt.toDate().toLocaleString() : "";
+
+    const el = document.createElement("div");
+    el.className = "item";
+    el.innerHTML = `
+      <div class="itemTop">
+        <div style="min-width:0">
+          <h3 title="${title}">${title}</h3>
+          <div class="tag">${cat} • ${typ} • ${cond} • ${loc}</div>
+          <div class="tag">Seller: <b>${seller}</b> • Status: <b>${status}</b>${created ? " • " + created : ""}</div>
+        </div>
+        <div class="price">${price}</div>
+      </div>
+      <div class="thumbRow">
+        ${img ? `<img class="thumb" src="${safeText(img)}" alt="Listing image" />` : `<div class="thumb" aria-hidden="true"></div>`}
+        <div style="min-width:0">
+          <div class="muted" style="font-size:13px;white-space:pre-wrap;word-break:break-word">${desc}</div>
+          ${d.contactNote ? `<div class="tag" style="margin-top:8px">Contact: ${safeText(d.contactNote)}</div>` : ""}
+        </div>
+      </div>
+      ${mine ? `
+        <div class="actions">
+          <button class="small" data-act="sold">Mark sold</button>
+          <button class="small" data-act="remove">Remove</button>
+        </div>` : ``}
+    `;
+
+    if (mine){
+      el.querySelectorAll("button[data-act]").forEach(btn => {
+        btn.addEventListener("click", async () => {
+          try{
+            const act = btn.getAttribute("data-act");
+            if (act === "sold") await updateDoc(doc(db, "listings", docSnap.id), { status:"sold", updatedAt: serverTimestamp() });
+            if (act === "remove") await updateDoc(doc(db, "listings", docSnap.id), { status:"removed", updatedAt: serverTimestamp() });
+            await loadMyListings();
+          }catch(e){
+            alert(e.message || String(e));
+          }
+        });
+      });
+    }
+
+    return el;
+  }
+
+  async function loadFeed(reset=true){
+    $("feedStatus").textContent = "Loading listings…";
+    $("btnMore").classList.add("hide");
+    if (reset){ lastDoc = null; $("items").innerHTML = ""; }
+
+    const qText = $("q").value.trim().toLowerCase();
+    const cat = $("category").value.trim();
+
+    // Simple search: prefix-ish using titleLower >= q and < q+ '\uf8ff'
+    // For simplicity without extra libs, we do:
+    // - if qText exists: titleLower range query (requires index with createdAt order often)
+    // We'll keep it minimal: no range + orderBy createdAt unless searching is empty.
+    let base = collection(db, "listings");
+
+    let qry;
+    if (qText){
+      // Range query on titleLower (you may need composite indexes if you add more filters)
+      const end = qText + "\uf8ff";
+      // Firestore requires orderBy on same field for range
+      qry = query(
+        base,
+        where("status", "==", "active"),
+        orderBy("titleLower"),
+        // NOTE: category filter with range queries can require composite index; keep simple:
+        ...(cat ? [where("category", "==", cat)] : []),
+        // range:
+        where("titleLower", ">=", qText),
+        where("titleLower", "<=", end),
+        limit(10)
+      );
+      if (lastDoc){
+        // startAfter requires same ordering field; lastDoc works if query consistent
+        qry = query(qry, startAfter(lastDoc));
+      }
+    } else {
+      // Default feed: newest active
+      qry = query(
+        base,
+        where("status", "==", "active"),
+        ...(cat ? [where("category", "==", cat)] : []),
+        orderBy("createdAt", "desc"),
+        limit(10),
+        ...(lastDoc ? [startAfter(lastDoc)] : [])
+      );
+    }
+
+    const snap = await getDocs(qry);
+    $("feedStatus").textContent = snap.empty ? "No listings found." : "";
+
+    snap.docs.forEach(d => $("items").appendChild(renderItem(d, false)));
+    lastDoc = snap.docs[snap.docs.length - 1] || lastDoc;
+
+    $("count").textContent = `${document.querySelectorAll("#items .item").length} shown`;
+
+    // show "Load more" if we got a full page
+    if (snap.docs.length === 10) $("btnMore").classList.remove("hide");
+  }
+
+  async function loadMyListings(){
+    if (!currentUser) return;
+    $("myStatus").textContent = "Loading your listings…";
+    $("myItems").innerHTML = "";
+
+    const qry = query(
+      collection(db, "listings"),
+      where("sellerUid", "==", currentUser.uid),
+      orderBy("createdAt", "desc"),
+      limit(50)
+    );
+
+    const snap = await getDocs(qry);
+    $("myStatus").textContent = snap.empty ? "You have no listings yet." : "";
+    snap.docs.forEach(d => $("myItems").appendChild(renderItem(d, true)));
+  }
+
+  /***********************
+   * 7) View switching
+   ***********************/
+  function show(view){
+    feedMode = view;
+
+    $("newListing").classList.toggle("hide", view !== "new");
+    $("feed").classList.toggle("hide", view !== "feed");
+    $("myListings").classList.toggle("hide", view !== "my");
+
+    $("viewTitle").textContent =
+      view === "new" ? "New Listing" :
+      view === "my" ? "My Listings" : "Feed";
+  }
+
+  /***********************
+   * 8) Wire UI events
+   ***********************/
+  $("btnLogin").addEventListener("click", async () => {
+    try{
+      setGlobal("Logging in…");
+      await loginWithUsername($("authUsername").value, $("authPassword").value);
+    }catch(e){
+      setGlobal(e.message || String(e), false);
+    }
+  });
+
+  $("btnSignup").addEventListener("click", async () => {
+    try{
+      setGlobal("Creating account…");
+      await signupWithUsername($("authUsername").value, $("authPassword").value);
+    }catch(e){
+      setGlobal(e.message || String(e), false);
+    }
+  });
+
+  $("btnLogout").addEventListener("click", async () => {
+    try{
+      await signOut(auth);
+    }catch(e){
+      setGlobal(e.message || String(e), false);
+    }
+  });
+
+  $("btnSaveProfile").addEventListener("click", async () => {
+    try{
+      if (!currentUser) throw new Error("Not signed in.");
+      const displayName = $("profileDisplayName").value.trim();
+      const location = $("profileLocation").value.trim();
+      if (displayName.length > 40) throw new Error("Display name too long.");
+      if (location.length > 40) throw new Error("Location too long.");
+      await writeUserProfile(currentUser.uid, { displayName, location });
+      setGlobal("Profile saved.");
+    }catch(e){
+      setGlobal(e.message || String(e), false);
+    }
+  });
+
+  $("btnNew").addEventListener("click", () => show("new"));
+  $("btnFeed").addEventListener("click", async () => { show("feed"); await loadFeed(true); });
+  $("btnMy").addEventListener("click", async () => { show("my"); await loadMyListings(); });
+
+  $("btnCancelNew").addEventListener("click", async () => { show("feed"); await loadFeed(true); });
+
+  $("btnPublish").addEventListener("click", async () => {
+    try{
+      setGlobal("Publishing listing…");
+      await publishListing();
+      setGlobal("Listing published!");
+      // reset form
+      ["liTitle","liPrice","liDesc","liImg1","liImg2","liLocation","liContact"].forEach(id => $(id).value = "");
+      $("liCategory").value = "General";
+      $("liCondition").value = "Good";
+      $("liType").value = "sell";
+      show("feed");
+      await loadFeed(true);
+    }catch(e){
+      setGlobal(e.message || String(e), false);
+    }
+  });
+
+  $("btnMore").addEventListener("click", async () => {
+    try{ await loadFeed(false); }catch(e){ setGlobal(e.message || String(e), false); }
+  });
+
+  $("q").addEventListener("input", debounce(() => loadFeed(true), 350));
+  $("category").addEventListener("change", () => loadFeed(true));
+
+  function debounce(fn, ms){
+    let t = null;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), ms);
+    };
+  }
+
+  /***********************
+   * 9) Auth state -> UI
+   ***********************/
+  onAuthStateChanged(auth, async (user) => {
+    currentUser = user || null;
+
+    if (!user){
+      currentUsername = null;
+      $("signedOut").classList.remove("hide");
+      $("signedIn").classList.add("hide");
+      $("btnLogout").classList.add("hide");
+      $("btnNew").classList.add("hide");
+      $("btnMy").classList.add("hide");
+      $("who").classList.add("hide");
+      setGlobal("Signed out.");
+      show("feed");
+      await loadFeed(true);
+      return;
+    }
+
+    // Signed in
+    $("signedOut").classList.add("hide");
+    $("signedIn").classList.remove("hide");
+    $("btnLogout").classList.remove("hide");
+    $("btnNew").classList.remove("hide");
+    $("btnMy").classList.remove("hide");
+
+    $("profileUid").textContent = user.uid;
+
+    // Load profile (to get username + show fields)
+    const profile = await readUserProfile(user.uid);
+    currentUsername = profile?.username || "(unknown)";
+    $("profileUsername").textContent = currentUsername;
+    $("profileDisplayName").value = profile?.displayName || "";
+    $("profileLocation").value = profile?.location || "";
+
+    $("who").textContent = `@${currentUsername}`;
+    $("who").classList.remove("hide");
+
+    setGlobal("Signed in.");
+    show("feed");
+    await loadFeed(true);
+  });
+
+  // Initial message
+  setGlobal("Ready.");
+</script>
+</body>
+</html>
